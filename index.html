@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Spelling Helper</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <button id="settingsButton" class="icon-button" aria-label="Settings" title="Settings">⚙️</button>
+
+  <main class="app">
+    <h1 class="title">✨ Spelling Helper ✨</h1>
+
+    <section id="statusArea" class="status-area" aria-live="polite">
+      <p id="statusText" class="status-text">Tap the microphone and say your wake word to spell a word!</p>
+    </section>
+
+    <section id="wordArea" class="word-area" hidden>
+      <div id="wordDisplay" class="word-display"></div>
+      <div id="letterTiles" class="letter-tiles"></div>
+      <p id="wordNote" class="word-note"></p>
+    </section>
+
+    <div class="controls">
+      <button id="micButton" class="big-button mic-button">
+        <span class="big-button-icon">🎤</span>
+        <span class="big-button-label">Start Listening</span>
+      </button>
+      <button id="clearButton" class="big-button clear-button" disabled>
+        <span class="big-button-icon">✖️</span>
+        <span class="big-button-label">Clear</span>
+      </button>
+    </div>
+  </main>
+
+  <div id="settingsModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <h2>Settings</h2>
+      <label for="wakeWordInput">Wake word</label>
+      <input id="wakeWordInput" type="text" placeholder="hey helper" />
+      <p class="modal-hint">Say "&lt;wake word&gt;, spell &lt;word&gt;" to ask.</p>
+      <div class="modal-buttons">
+        <button id="settingsCancel" class="modal-button secondary">Cancel</button>
+        <button id="settingsSave" class="modal-button primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
