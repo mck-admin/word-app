@@ -87,7 +87,7 @@
     const tiles = [...word].map((letter, index) => {
       const tile = document.createElement("div");
       tile.className = "letter-tile";
-      tile.textContent = letter.toUpperCase();
+      tile.textContent = letter;
       tile.style.background = TILE_COLORS[index % TILE_COLORS.length];
       letterTiles.appendChild(tile);
       return tile;
