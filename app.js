@@ -123,7 +123,11 @@
 
   function extractQuery(transcript) {
     const lower = transcript.toLowerCase();
-    const wakeIndex = lower.indexOf(wakeWord);
+    // Anchor on the LAST time the wake word was said, not the first: the
+    // transcript buffer persists across silence-triggered restarts (so a
+    // wake word and command split across a pause still combine), so if a
+    // kid repeats the wake phrase, only the most recent one should count.
+    const wakeIndex = lower.lastIndexOf(wakeWord);
     if (wakeIndex === -1) return null;
 
     const after = transcript.slice(wakeIndex + wakeWord.length);
@@ -132,7 +136,13 @@
       .split(/\s+/)
       .filter(Boolean);
 
-    const meaningful = words.filter((w) => !FILLER_WORDS.has(w.toLowerCase()));
+    // Also strip the wake word's own tokens, so an earlier or repeated
+    // utterance of it (e.g. "hey helper... hey helper spell dog") can't
+    // be mistaken for the word to spell.
+    const wakeWordTokens = new Set(wakeWord.split(/\s+/).filter(Boolean));
+    const meaningful = words.filter(
+      (w) => !FILLER_WORDS.has(w.toLowerCase()) && !wakeWordTokens.has(w.toLowerCase())
+    );
     if (meaningful.length === 0) return null;
 
     // Prefer the words after "spell" if present; otherwise use whatever is left.
@@ -188,15 +198,22 @@
     setMicButtonState(false);
   }
 
-  function ensureRecognition() {
-    if (recognition || !SpeechRecognitionImpl) return recognition;
+  // Reusing a single SpeechRecognition instance across many restarts is a
+  // well-known source of flakiness on real devices (especially Android
+  // Chrome): after enough silence-triggered stop/restart cycles the engine
+  // can end up in a state where start() silently fails or no more results
+  // ever arrive, even though the app's own "listening" state looks fine.
+  // Building a brand-new instance for every (re)start avoids that, and the
+  // `instance !== recognition` checks make sure a stale instance's late
+  // events can't interfere once it's been superseded.
+  function buildRecognition() {
+    const instance = new SpeechRecognitionImpl();
+    instance.continuous = true;
+    instance.interimResults = true;
+    instance.lang = "en-US";
 
-    recognition = new SpeechRecognitionImpl();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onresult = (event) => {
+    instance.onresult = (event) => {
+      if (instance !== recognition) return;
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const result = event.results[i];
         if (result.isFinal) {
@@ -211,7 +228,8 @@
       }
     };
 
-    recognition.onerror = (event) => {
+    instance.onerror = (event) => {
+      if (instance !== recognition) return;
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         setStatus("I can't hear you! Please ask a grown-up to allow the microphone.", "error");
         listeningRequested = false;
@@ -224,19 +242,27 @@
       }
     };
 
-    recognition.onend = () => {
+    instance.onend = () => {
+      if (instance !== recognition) return;
       if (listeningRequested) {
-        try {
-          recognition.start();
-        } catch (err) {
-          // already started; ignore
-        }
+        // A short pause before restarting lets the OS release the mic
+        // between sessions instead of immediately re-requesting it, which
+        // is what tends to make the engine stop responding after a while.
+        setTimeout(() => {
+          if (!listeningRequested || instance !== recognition) return;
+          recognition = buildRecognition();
+          try {
+            recognition.start();
+          } catch (err) {
+            // ignore; nothing more we can do if the engine refuses to start
+          }
+        }, 300);
       } else {
         setMicButtonState(false);
       }
     };
 
-    return recognition;
+    return instance;
   }
 
   function startListening() {
@@ -247,11 +273,11 @@
       );
       return;
     }
-    ensureRecognition();
     transcriptBuffer = "";
     listeningRequested = true;
     setMicButtonState(true);
     setStatus("I'm listening...", "listening");
+    recognition = buildRecognition();
     try {
       recognition.start();
     } catch (err) {
