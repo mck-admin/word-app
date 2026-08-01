@@ -27,6 +27,7 @@
   let recognition = null;
   let listeningRequested = false; // whether the user wants the mic armed
   let transcriptBuffer = "";
+  let scheduledSpellingTimers = [];
 
   function setStatus(message, mode) {
     statusText.textContent = message;
@@ -45,21 +46,14 @@
       : (wordArea.hidden ? "Start Listening" : "Ask Another Word");
   }
 
-  function speak(text, onend) {
-    if (!("speechSynthesis" in window)) {
-      if (onend) setTimeout(onend, 0);
-      return;
-    }
+  function speak(text) {
+    if (!("speechSynthesis" in window)) return;
     try {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 0.9;
-      if (onend) {
-        utterance.onend = onend;
-        utterance.onerror = onend;
-      }
       window.speechSynthesis.speak(utterance);
     } catch (err) {
-      if (onend) setTimeout(onend, 0);
+      // best-effort audio only; the visual letter reveal doesn't depend on this
     }
   }
 
@@ -69,7 +63,14 @@
     }
   }
 
+  function cancelScheduledSpelling() {
+    scheduledSpellingTimers.forEach((timer) => clearTimeout(timer));
+    scheduledSpellingTimers = [];
+  }
+
   function clearWordDisplay() {
+    cancelScheduledSpelling();
+    stopSpeaking();
     wordDisplay.textContent = "";
     letterTiles.innerHTML = "";
     wordNote.textContent = "";
@@ -96,23 +97,28 @@
   }
 
   function speakSpelling(word, tiles) {
+    // Timer-driven on purpose: chaining speechSynthesis utterances via
+    // onend is unreliable on real devices (Android Chrome in particular
+    // often never fires onend for a queued utterance), which would stall
+    // the letter reveal after the first tile. The visual animation must
+    // not depend on TTS callbacks firing at all.
     const letters = [...word];
-    let i = 0;
+    const stepMs = 600;
 
-    function speakNext() {
-      if (i >= letters.length) {
-        speak(word);
-        return;
-      }
-      const letter = letters[i];
-      const tile = tiles[i];
-      const isLetter = /[a-zA-Z]/.test(letter);
-      if (tile) tile.classList.add("visible");
-      speak(isLetter ? letter.toUpperCase() : letter, speakNext);
-      i += 1;
-    }
+    letters.forEach((letter, index) => {
+      const timer = setTimeout(() => {
+        const tile = tiles[index];
+        if (tile) tile.classList.add("visible");
+        const isLetter = /[a-zA-Z]/.test(letter);
+        speak(isLetter ? letter.toUpperCase() : letter);
+      }, index * stepMs);
+      scheduledSpellingTimers.push(timer);
+    });
 
-    speakNext();
+    const finalTimer = setTimeout(() => {
+      speak(word);
+    }, letters.length * stepMs);
+    scheduledSpellingTimers.push(finalTimer);
   }
 
   function extractQuery(transcript) {
@@ -139,7 +145,17 @@
       const response = await fetch(
         `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(cleaned)}`
       );
-      if (!response.ok) return { found: false, word: cleaned };
+      // A 404 means the dictionary genuinely doesn't have this word. Any
+      // other non-OK status (rate limiting, server errors, etc.) is a
+      // lookup problem, not a real "not found" — treat it like being
+      // offline so a throttled request doesn't get reported as a
+      // dictionary miss.
+      if (response.status === 404) {
+        return { found: false, word: cleaned };
+      }
+      if (!response.ok) {
+        return { found: false, word: cleaned, offline: true };
+      }
       const data = await response.json();
       const entry = Array.isArray(data) ? data[0] : null;
       if (entry && entry.word) {
@@ -267,7 +283,6 @@
   });
 
   clearButton.addEventListener("click", () => {
-    stopSpeaking();
     pauseListening();
     clearWordDisplay();
     clearButton.disabled = true;
