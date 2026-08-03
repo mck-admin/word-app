@@ -87,7 +87,7 @@
     const tiles = [...word].map((letter, index) => {
       const tile = document.createElement("div");
       tile.className = "letter-tile";
-      tile.textContent = letter.toUpperCase();
+      tile.textContent = letter;
       tile.style.background = TILE_COLORS[index % TILE_COLORS.length];
       letterTiles.appendChild(tile);
       return tile;
@@ -110,7 +110,10 @@
         const tile = tiles[index];
         if (tile) tile.classList.add("visible");
         const isLetter = /[a-zA-Z]/.test(letter);
-        speak(isLetter ? letter.toUpperCase() : letter);
+        // Always speak letters lowercase: some TTS engines (Safari's in
+        // particular) announce "capital X" for a bare uppercase letter,
+        // which we don't want regardless of the tile's display casing.
+        speak(isLetter ? letter.toLowerCase() : letter);
       }, index * stepMs);
       scheduledSpellingTimers.push(timer);
     });
