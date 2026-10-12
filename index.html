@@ -40,6 +40,25 @@
       <label for="wakeWordInput">Wake word</label>
       <input id="wakeWordInput" type="text" placeholder="hey helper" />
       <p class="modal-hint">Say "&lt;wake word&gt;, spell &lt;word&gt;" to ask.</p>
+
+      <div class="settings-toggle-row">
+        <label for="sightWordsToggle">Allow sight words</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="sightWordsToggle" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p class="modal-hint">Common words like "the", "said", "was".</p>
+
+      <div class="settings-toggle-row">
+        <label for="shortWordsToggle">Allow short words (3-4 letters)</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="shortWordsToggle" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p class="modal-hint">Turn either off to encourage sounding those words out instead.</p>
+
       <div class="modal-buttons">
         <button id="settingsCancel" class="modal-button secondary">Cancel</button>
         <button id="settingsSave" class="modal-button primary">Save</button>
