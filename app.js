@@ -5,6 +5,27 @@
     "me", "how's", "hows", "for",
   ]);
 
+  // Dolch pre-primer, primer, and first-grade sight word lists — the
+  // common, often non-phonetic words kids are expected to memorize by
+  // sight rather than sound out, covering roughly pre-k through 1st grade.
+  const SIGHT_WORDS = new Set([
+    "a", "and", "away", "big", "blue", "can", "come", "down", "find", "for",
+    "funny", "go", "help", "here", "i", "in", "is", "it", "jump", "little",
+    "look", "make", "me", "my", "not", "one", "play", "red", "run", "said",
+    "see", "the", "three", "to", "two", "up", "we", "where", "yellow", "you",
+    "all", "am", "are", "at", "ate", "be", "black", "brown", "but", "came",
+    "did", "do", "eat", "four", "get", "good", "have", "he", "into", "like",
+    "must", "new", "no", "now", "on", "our", "out", "please", "pretty",
+    "ran", "ride", "saw", "say", "she", "so", "soon", "that", "there",
+    "they", "this", "too", "under", "want", "was", "well", "went", "what",
+    "white", "who", "will", "with", "yes",
+    "after", "again", "an", "any", "as", "ask", "by", "could", "every",
+    "fly", "from", "give", "giving", "had", "has", "her", "him", "his",
+    "how", "just", "know", "let", "live", "may", "of", "old", "once",
+    "open", "over", "put", "round", "some", "stop", "take", "thank",
+    "them", "then", "think", "walk", "were", "when",
+  ]);
+
   const statusText = document.getElementById("statusText");
   const wordArea = document.getElementById("wordArea");
   const wordDisplay = document.getElementById("wordDisplay");
@@ -16,12 +37,16 @@
   const settingsButton = document.getElementById("settingsButton");
   const settingsModal = document.getElementById("settingsModal");
   const wakeWordInput = document.getElementById("wakeWordInput");
+  const sightWordsToggle = document.getElementById("sightWordsToggle");
+  const shortWordsToggle = document.getElementById("shortWordsToggle");
   const settingsSave = document.getElementById("settingsSave");
   const settingsCancel = document.getElementById("settingsCancel");
 
   const TILE_COLORS = ["#ff6b6b", "#ffa94d", "#ffd43b", "#69db7c", "#4dabf7", "#b197fc", "#f783ac"];
 
   let wakeWord = (localStorage.getItem("wakeWord") || DEFAULT_WAKE_WORD).toLowerCase().trim();
+  let sightWordsEnabled = localStorage.getItem("sightWordsEnabled") !== "false";
+  let shortWordsEnabled = localStorage.getItem("shortWordsEnabled") !== "false";
 
   const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
   let recognition = null;
@@ -134,22 +159,37 @@
     if (wakeIndex === -1) return null;
 
     const after = transcript.slice(wakeIndex + wakeWord.length);
-    const words = after
-      .replace(/[^a-zA-Z0-9'\s]/g, " ")
-      .split(/\s+/)
-      .filter(Boolean);
-
     // Also strip the wake word's own tokens, so an earlier or repeated
     // utterance of it (e.g. "hey helper... hey helper spell dog") can't
     // be mistaken for the word to spell.
     const wakeWordTokens = new Set(wakeWord.split(/\s+/).filter(Boolean));
-    const meaningful = words.filter(
-      (w) => !FILLER_WORDS.has(w.toLowerCase()) && !wakeWordTokens.has(w.toLowerCase())
-    );
-    if (meaningful.length === 0) return null;
+    let words = after
+      .replace(/[^a-zA-Z0-9'\s]/g, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter((w) => !wakeWordTokens.has(w.toLowerCase()));
 
-    // Prefer the words after "spell" if present; otherwise use whatever is left.
-    return meaningful.join(" ");
+    // Anchor on the last "spell" too: whatever follows it is explicitly
+    // the target, even if it's a word that would otherwise be filtered
+    // out below (e.g. "spell the", "spell a").
+    const spellIndex = words.map((w) => w.toLowerCase()).lastIndexOf("spell");
+    const explicitSpell = spellIndex !== -1;
+    if (explicitSpell) {
+      words = words.slice(spellIndex + 1);
+    }
+    if (words.length === 0) return null;
+
+    const meaningful = words.filter((w) => !FILLER_WORDS.has(w.toLowerCase()));
+
+    // Without an explicit "spell", require at least one non-filler word so
+    // a partial utterance (e.g. "hey helper, please...") keeps waiting for
+    // the rest instead of prematurely matching on "please". With an
+    // explicit "spell", fall back to the raw remaining words so a target
+    // that's itself a common/filler word ("the", "a") still comes through.
+    const finalWords = meaningful.length > 0 ? meaningful : (explicitSpell ? words : []);
+    if (finalWords.length === 0) return null;
+
+    return finalWords.join(" ");
   }
 
   async function lookupWord(word) {
@@ -180,8 +220,27 @@
     }
   }
 
+  function isWordAllowed(word) {
+    const normalized = word.toLowerCase();
+    if (!sightWordsEnabled && SIGHT_WORDS.has(normalized)) return false;
+    if (!shortWordsEnabled && (normalized.length === 3 || normalized.length === 4)) return false;
+    return true;
+  }
+
   async function handleQuery(rawQuery) {
+    const candidateWord = rawQuery.split(/\s+/)[0];
+
     pauseListening();
+
+    if (!isWordAllowed(candidateWord)) {
+      const message = "Sorry, please try to sound it out.";
+      setStatus(message);
+      speak(message);
+      micButton.disabled = false;
+      setMicButtonState(false);
+      return;
+    }
+
     setStatus(`Looking up "${rawQuery}"...`);
 
     const result = await lookupWord(rawQuery);
@@ -191,10 +250,10 @@
       showWord(result.word, "");
     } else if (result.offline) {
       setStatus("I couldn't check the dictionary, but here's what I heard!");
-      showWord(rawQuery.split(/\s+/)[0], "(couldn't reach the dictionary)");
+      showWord(candidateWord, "(couldn't reach the dictionary)");
     } else {
       setStatus(`I couldn't find "${rawQuery}" in the dictionary.`);
-      showWord(rawQuery.split(/\s+/)[0], "(not found in the dictionary — here's what I heard)");
+      showWord(candidateWord, "(not found in the dictionary — here's what I heard)");
     }
 
     micButton.disabled = false;
@@ -321,6 +380,8 @@
 
   settingsButton.addEventListener("click", () => {
     wakeWordInput.value = wakeWord;
+    sightWordsToggle.checked = sightWordsEnabled;
+    shortWordsToggle.checked = shortWordsEnabled;
     settingsModal.hidden = false;
   });
 
@@ -334,6 +395,10 @@
       wakeWord = value;
       localStorage.setItem("wakeWord", wakeWord);
     }
+    sightWordsEnabled = sightWordsToggle.checked;
+    shortWordsEnabled = shortWordsToggle.checked;
+    localStorage.setItem("sightWordsEnabled", String(sightWordsEnabled));
+    localStorage.setItem("shortWordsEnabled", String(shortWordsEnabled));
     settingsModal.hidden = true;
     if (wordArea.hidden) {
       setStatus(idlePrompt());
