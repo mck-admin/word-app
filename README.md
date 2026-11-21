@@ -32,8 +32,8 @@ type="module">` imports, so serving the `packages/` folder is enough —
 there's no build step between editing a file and seeing the change.
 
 (This split exists to support an in-progress native app, built alongside
-`web-public` in the same `core` modules rather than a rewrite — see the
-plan notes in this repo's history if you're picking this up later. None of
+`web-public` in the same `core` modules rather than a rewrite — see
+[`docs/plan.md`](docs/plan.md) if you're picking this up later. None of
 that is shipped yet; `web-public` today behaves identically to the
 single-file version it replaced.)
 
